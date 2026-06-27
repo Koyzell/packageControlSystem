@@ -9,10 +9,10 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.ustb</groupId>
-    <artifactId>packageControllSystem</artifactId>
+    <artifactId>packageControlSystem</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>packageControllSystem</name>
-    <description>packageControllSystem</description>
+    <name>packageControlSystem</name>
+    <description>packageControlSystem</description>
     <url/>
     <licenses>
         <license/>

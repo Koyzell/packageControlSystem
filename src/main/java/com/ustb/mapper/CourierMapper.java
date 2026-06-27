@@ -17,4 +17,7 @@ public interface CourierMapper {
     @Insert("INSERT INTO couriers (name) VALUES (#{name})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(CourierEntity entity);
+
+    @Delete("DELETE FROM couriers WHERE name = #{name}")
+    int deleteByName(String name);
 }

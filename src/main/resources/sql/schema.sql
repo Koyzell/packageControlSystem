@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS packages (
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_tracking_number (tracking_number),
-    INDEX idx_pickup_code (pickup_code),
+    UNIQUE KEY uk_pickup_code (pickup_code),
     INDEX idx_recipient_phone (recipient_phone),
     INDEX idx_status (status),
     INDEX idx_check_in_time (check_in_time)

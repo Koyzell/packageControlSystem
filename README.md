@@ -19,7 +19,7 @@ GitHub: [https://github.com/Koyzell/packageControlSystem](https://github.com/Koy
 - **取件管理**：管理员代客取件、用户自助取件，记录出库时间
 - **逾期预警**：入库超过 48 小时未取件自动标记"滞留"，红色高亮显示
 - **统计看板**：实时展示今日入库、今日取件、滞留数量、待取总数
-- **动态配置**：货架和快递公司支持界面新增，即时生效
+- **动态配置**：货架和快递公司支持界面新增和删除，即时生效
 - **操作日志**：入库、取件操作自动记录，可追溯
 - **用户认证**：JWT 登录认证，管理员与普通用户角色分离
 
@@ -99,6 +99,8 @@ packageControllSystem/
 │   │       ├── application.yaml                       # 应用配置 (MySQL/JWT)
 │   │       ├── schema.sql                              # 建库建表 SQL + 种子数据
 │   │       ├── test-data.sql                           # 30 条开发测试数据
+│   │       └── mapper/
+│   │           └── PackageMapper.xml                    # 复杂 SQL（分页查询）
 │   │       └── static/
 │   │           ├── index.html                          # 首页（智能路由）
 │   │           ├── login.html                          # 登录页
@@ -145,9 +147,11 @@ packageControllSystem/
 | GET | `/api/admin/dashboard` | 统计面板（今日入库/取件/滞留/待取数） |
 | GET | `/api/admin/logs` | 最近 20 条操作日志 |
 | GET | `/api/admin/shelves` | 货架列表 |
-| POST | `/api/admin/shelves` | 新增货架（请求体为名称字符串） |
+| POST | `/api/admin/shelves` | 新增货架 |
+| DELETE | `/api/admin/shelves?name=xxx` | 删除货架 |
 | GET | `/api/admin/couriers` | 快递公司列表 |
-| POST | `/api/admin/couriers` | 新增快递公司（请求体为名称字符串） |
+| POST | `/api/admin/couriers` | 新增快递公司|
+| DELETE | `/api/admin/couriers?name=xxx` | 删除快递公司 |
 
 ### 4.3 用户接口（需登录，ADMIN 或 USER 均可）
 
@@ -188,19 +192,19 @@ couriers ────────────────
 
 ### 5.2 packages 表（核心）
 
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| tracking_number | VARCHAR(64) | UNIQUE, NOT NULL | 运单号 |
-| recipient_phone | VARCHAR(20) | NOT NULL, INDEX | 收件人手机号 |
-| courier_company | VARCHAR(32) | NOT NULL | 快递公司 |
-| shelf_location | VARCHAR(32) | NOT NULL | 货架位置 |
-| pickup_code | VARCHAR(20) | INDEX | 取件码，格式 `YYMMDD-L-NNN` |
+| 字段 | 类型 | 约束                                         | 说明 |
+|------|------|--------------------------------------------|------|
+| id | BIGINT | PK, AUTO_INCREMENT                         | 主键 |
+| tracking_number | VARCHAR(64) | UNIQUE, NOT NULL                           | 运单号 |
+| recipient_phone | VARCHAR(20) | NOT NULL, INDEX                            | 收件人手机号 |
+| courier_company | VARCHAR(32) | NOT NULL                                   | 快递公司 |
+| shelf_location | VARCHAR(32) | NOT NULL                                   | 货架位置 |
+| pickup_code | VARCHAR(20) | UNIQUE                                     | 取件码，格式 `YYMMDD-L-NNN` |
 | status | VARCHAR(16) | NOT NULL, DEFAULT 'AWAITING_PICKUP', INDEX | `AWAITING_PICKUP` / `PICKED_UP` |
-| check_in_time | DATETIME | NOT NULL, INDEX | 入库时间 |
-| check_out_time | DATETIME | NULL | 出库时间 |
-| created_at | DATETIME | NOT NULL | 创建时间 |
-| updated_at | DATETIME | NOT NULL, ON UPDATE | 更新时间 |
+| check_in_time | DATETIME | NOT NULL, INDEX                            | 入库时间 |
+| check_out_time | DATETIME | NULL                                       | 出库时间 |
+| created_at | DATETIME | NOT NULL                                   | 创建时间 |
+| updated_at | DATETIME | NOT NULL, ON UPDATE                        | 更新时间 |
 
 ### 5.3 users 表
 
@@ -228,9 +232,10 @@ couriers ────────────────
 ### 5.5 设计要点
 
 - **逾期不存储**：逾期状态由 `checkInTime + 48h < now` 实时计算，避免数据不一致
-- **取件码规则**：`YYMMDD` + 字母 A-Z（每组 999 个序号）+ 三位序号，单日容量 25,974 件
+- **取件码规则**：`YYMMDD` + 字母 A-Z（每组 999 个序号）+ 三位序号，单日容量 25,974 件。`pickup_code` 设 UNIQUE 约束，INSERT 碰撞时自动重新生成取件码重试（最多 5 次）
+- **并发安全**：`checkIn()` 和 `pickup()` 加 `@Transactional` 保证包裹入库 + 操作日志的原子性。取件采用乐观锁：`UPDATE ... WHERE status = 'AWAITING_PICKUP'`，影响行数为 0 则视为已被取走
 - **MyBatis 下划线映射**：`map-underscore-to-camel-case: true` 自动将数据库 `snake_case` 映射到 Java `camelCase`
-- **运单号唯一**：数据库层面 UNIQUE 约束防止重复入库
+- **运单号唯一**：数据库层面 UNIQUE 约束防止重复入库，并发 INSERT 冲突时捕获 `DuplicateKeyException` 返回 409
 
 ---
 
@@ -248,7 +253,7 @@ index.html（智能路由）
 ### 6.2 管理员工作台（admin.html）
 
 - **统计看板**：顶部 4 个卡片实时展示今日入库数、今日取件数、当前滞留数、待取总数
-- **包裹入库**：表单填写运单号、手机号、快递公司（下拉选择可新增）、货架位置（下拉选择可新增），提交后自动生成取件码
+- **包裹入库**：表单填写运单号、手机号、快递公司（下拉选择，弹窗增删）、货架位置（下拉选择，弹窗增删），提交后自动生成取件码
 - **包裹列表**：支持关键词搜索、状态筛选（全部/待取件/已取件/逾期滞留）、分页浏览
 - **逾期标识**：入库超 48 小时的行显示红色左边框 + 红色底纹 + 红色"滞留"标签
 - **操作日志**：页面底部展示最近 20 条操作记录
@@ -291,7 +296,7 @@ cd packageControlSystem
 
 2. **创建数据库**
 
-在 MySQL 中执行 `src/main/resources/sql/schema.sql`，会自动建库建表并写入种子数据。
+在 MySQL 中执行 `src/main/resources/sql/schema.sql`，建库建表。
 
 3. **配置数据库连接**
 

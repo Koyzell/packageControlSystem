@@ -10,7 +10,9 @@ import com.ustb.mapper.PackageMapper;
 import com.ustb.service.PackageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -25,11 +27,13 @@ public class PackageServiceImpl implements PackageService {
 
     private static final int MAX_PER_LETTER = 999;
     private static final int MAX_LETTERS = 26;
+    private static final int MAX_RETRIES = 5;
 
     private final PackageMapper packageMapper;
     private final OperationLogMapper operationLogMapper;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public PackageVO checkIn(CheckInRequest request, String operator) {
         PackageEntity existing = packageMapper.findByTrackingNumber(request.getTrackingNumber());
         if (existing != null) {
@@ -37,10 +41,9 @@ public class PackageServiceImpl implements PackageService {
         }
 
         PackageEntity entity = request.toEntity();
-        entity.setPickupCode(generatePickupCode());
-        packageMapper.insert(entity);
-        entity = packageMapper.findById(entity.getId());
+        insertWithPickupCodeRetry(entity);
 
+        entity = packageMapper.findById(entity.getId());
         operationLogMapper.insert(OperationLogEntity.builder()
                 .packageId(entity.getId())
                 .trackingNumber(entity.getTrackingNumber())
@@ -52,19 +55,38 @@ public class PackageServiceImpl implements PackageService {
         return toVO(entity);
     }
 
-    @Override
-    public PackageVO pickup(Long id, String operator) {
-        PackageEntity entity = packageMapper.findById(id);
-        if (entity == null) {
-            throw new BusinessException(404, "包裹不存在");
+    private void insertWithPickupCodeRetry(PackageEntity entity) {
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            try {
+                entity.setPickupCode(generatePickupCode());
+                packageMapper.insert(entity);
+                return;
+            } catch (DuplicateKeyException e) {
+                String msg = e.getMessage();
+                if (msg != null && msg.contains("tracking_number")) {
+                    throw new BusinessException(409, "该运单号已入库");
+                }
+                // 取件码生成冲突，尝试重新生成取件码
+                if (attempt == MAX_RETRIES - 1) {
+                    throw new BusinessException(500, "系统繁忙，请稍后重试");
+                }
+            }
         }
-        if (!PackageStatus.AWAITING_PICKUP.name().equals(entity.getStatus())) {
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PackageVO pickup(Long id, String operator) {
+        int rows = packageMapper.updateStatusToPickedUp(id);
+        if (rows == 0) {
+            PackageEntity entity = packageMapper.findById(id);
+            if (entity == null) {
+                throw new BusinessException(404, "包裹不存在");
+            }
             throw new BusinessException(400, "该包裹已被取走");
         }
-        packageMapper.updateStatusToPickedUp(id);
-        entity.setStatus(PackageStatus.PICKED_UP.name());
-        entity.setCheckOutTime(LocalDateTime.now());
 
+        PackageEntity entity = packageMapper.findById(id);
         operationLogMapper.insert(OperationLogEntity.builder()
                 .packageId(entity.getId())
                 .trackingNumber(entity.getTrackingNumber())
@@ -81,27 +103,9 @@ public class PackageServiceImpl implements PackageService {
     }
 
     @Override
-    public List<PackageVO> findAll(String status) {
-        List<PackageEntity> entities;
-        if (status != null && !status.isEmpty()) {
-            entities = packageMapper.findByStatus(status);
-        } else {
-            entities = packageMapper.findAll();
-        }
-        return entities.stream().map(this::toVO).collect(Collectors.toList());
-    }
-
-    @Override
     public List<PackageVO> findOverdue() {
         LocalDateTime cutoffTime = LocalDateTime.now().minusHours(48);
         return packageMapper.findOverdue(cutoffTime).stream()
-                .map(this::toVO)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<PackageVO> findAwaitingByPhone(String phone) {
-        return packageMapper.findAwaitingByPhone(phone).stream()
                 .map(this::toVO)
                 .collect(Collectors.toList());
     }

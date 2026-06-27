@@ -19,6 +19,7 @@ public class MetaController {
     private final ShelfMapper shelfMapper;
     private final CourierMapper courierMapper;
 
+    // 列出所有货架
     @GetMapping("/shelves")
     public Result<List<String>> listShelves() {
         List<String> names = shelfMapper.findAll().stream()
@@ -26,6 +27,7 @@ public class MetaController {
         return Result.success(names);
     }
 
+    // 新增货架
     @PostMapping("/shelves")
     public Result<Void> addShelf(@RequestBody String name) {
         if (name == null || name.isBlank() || name.length() > 10) {
@@ -55,5 +57,23 @@ public class MetaController {
         }
         courierMapper.insert(CourierEntity.builder().name(name).build());
         return Result.success("快递公司添加成功", null);
+    }
+
+    @DeleteMapping("/shelves")
+    public Result<Void> deleteShelf(@RequestParam String name) {
+        if (shelfMapper.findByName(name) == null) {
+            return Result.error(404, "货架不存在");
+        }
+        shelfMapper.deleteByName(name);
+        return Result.success("货架删除成功", null);
+    }
+
+    @DeleteMapping("/couriers")
+    public Result<Void> deleteCourier(@RequestParam String name) {
+        if (courierMapper.findByName(name) == null) {
+            return Result.error(404, "快递公司不存在");
+        }
+        courierMapper.deleteByName(name);
+        return Result.success("快递公司删除成功", null);
     }
 }

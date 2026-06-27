@@ -17,4 +17,7 @@ public interface ShelfMapper {
     @Insert("INSERT INTO shelves (name) VALUES (#{name})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(ShelfEntity entity);
+
+    @Delete("DELETE FROM shelves WHERE name = #{name}")
+    int deleteByName(String name);
 }

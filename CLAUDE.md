@@ -24,15 +24,15 @@ mvn spring-boot:run            # Start (requires MySQL with parcel_station datab
 |-------|-------|------|
 | Controller | `AdminController`, `UserController`, `AuthController`, `MetaController` | REST endpoints |
 | Service | `PackageService` interface + `PackageServiceImpl` | Business logic, pickup code generation, operation logging |
-| Mapper | `PackageMapper`, `UserMapper`, `OperationLogMapper`, `ShelfMapper`, `CourierMapper` | Annotation-based MyBatis, no XML |
+| Mapper | `PackageMapper`, `UserMapper`, `OperationLogMapper`, `ShelfMapper`, `CourierMapper` | Mostly annotation-based MyBatis; `PackageMapper` uses XML for complex pagination queries |
 
 **Key API endpoints:**
 
 | Method | Path | Auth | Purpose |
 |--------|------|:---:|---------|
 | POST | `/api/auth/login` | public | Login, returns JWT |
-| GET/POST | `/api/admin/shelves` | ADMIN | List/add shelves |
-| GET/POST | `/api/admin/couriers` | ADMIN | List/add couriers |
+| GET/POST/DELETE | `/api/admin/shelves` | ADMIN | List/add/delete shelves |
+| GET/POST/DELETE | `/api/admin/couriers` | ADMIN | List/add/delete couriers |
 | GET | `/api/admin/dashboard` | ADMIN | Stats: today check-in/pickup, overdue, awaiting |
 | GET | `/api/admin/packages` | ADMIN | Paginated list (params: page, pageSize, keyword, status) |
 | POST | `/api/admin/packages/check-in` | ADMIN | Check-in with auto-generated pickup code |
@@ -43,9 +43,9 @@ mvn spring-boot:run            # Start (requires MySQL with parcel_station datab
 
 | Page | Purpose |
 |------|---------|
-| `index.html` | Smart router: checks localStorage JWT, redirects to login/admin/user |
-| `login.html` | Login form, POSTs to `/api/auth/login`, stores JWT+role to localStorage |
-| `admin.html` | Dashboard stats, check-in form (dynamic shelves/couriers dropdowns), paginated package table with status filters, overdue highlighting |
+| `index.html` | Smart router: checks JWT, redirects to login/admin/user |
+| `login.html` | Login form, POSTs to `/api/auth/login`, stores JWT+role to both sessionStorage and localStorage |
+| `admin.html` | Dashboard stats, check-in form (dynamic shelves/couriers dropdowns with modal add/delete), paginated package table with status filters, overdue highlighting |
 | `user.html` | Keyword search (phone/pickup-code/tracking-number), pickup confirmation |
 | `css/style.css` | Custom styles: overdue rows, fixed table layout, stat cards, login page |
 
@@ -53,17 +53,20 @@ mvn spring-boot:run            # Start (requires MySQL with parcel_station datab
 
 - **JWT auth**: `LoginInterceptor` (HandlerInterceptor, NOT Spring Security) validates Bearer tokens on `/api/**` except `/api/auth/**`. Returns HTTP 401/403 with JSON body. `app.auth.enabled=false` in test profile skips auth.
 - **Unified response**: `Result<T>` wrapper `{"code":200,"message":"...","data":{...}}`. Business errors use code field (400/404/409), HTTP status always 200 for controller responses, 401/403 for interceptor rejections.
-- **Pickup code**: Format `YYMMDD-L-NNN` (date 6 digits + letter A-Z + serial 001-999). Generated in `PackageServiceImpl.checkIn()` by counting today's packages. Single-day capacity: 26×999=25,974.
+- **Pickup code**: Format `YYMMDD-L-NNN` (date 6 digits + letter A-Z + serial 001-999). Generated in `PackageServiceImpl.checkIn()` by counting today's packages. Single-day capacity: 26x999=25,974. `pickup_code` has UNIQUE constraint; `insertWithPickupCodeRetry()` catches `DuplicateKeyException` and regenerates on collision (up to 5 retries).
+- **Concurrency**: `checkIn()` and `pickup()` are `@Transactional`. Pickup uses optimistic locking: `UPDATE ... WHERE id = #{id} AND status = 'AWAITING_PICKUP'` — rows affected = 0 means already picked up. Check-in uses `DuplicateKeyException` catch for both tracking_number (→409) and pickup_code (→retry).
 - **Overdue**: Computed in `toVO()` as `checkInTime + 48h < now`, never persisted.
-- **Pagination**: `PageResult<T>` wrapper with fields `list`, `total`, `page`, `pageSize`, `totalPages`.
-- **Frontend state**: `localStorage` for JWT token/role (cross-tab), `sessionStorage` for current page/filter (per-tab, survives refresh).
+- **Pagination**: `PageResult<T>` wrapper with fields `list`, `total`, `page`, `pageSize`, `totalPages`. Complex SQL in `mapper/PackageMapper.xml` using MyBatis `<where>` tag.
+- **Frontend state**: `sessionStorage` (per-tab, primary) for JWT token/role to prevent cross-tab login interference; `localStorage` (cross-tab, fallback) for initial sync. Page state (currentPage, currentFilter) in `sessionStorage` survives refresh.
 - **JWT expiry guard**: Both admin.html and user.html decode JWT payload on load, check `exp` claim, redirect to login if expired before any API call.
+- **Shelves/couriers management**: Modal-based add and delete. Add uses `text/plain` content type (not `application/json`) to avoid `StringHttpMessageConverter` quote-wrapping on `@RequestBody String`.
+- **Form reset**: After check-in, only text inputs are cleared — dropdown selections preserved for batch operations.
 
 **Database (MySQL `parcel_station`):**
 
 | Table | Purpose |
 |-------|---------|
-| `packages` | Core: tracking_number (UNIQUE), pickup_code, recipient_phone, courier_company, shelf_location, status (AWAITING_PICKUP/PICKED_UP), timestamps |
+| `packages` | Core: tracking_number (UNIQUE), pickup_code (UNIQUE), recipient_phone, courier_company, shelf_location, status (AWAITING_PICKUP/PICKED_UP), timestamps |
 | `users` | Auth: username (UNIQUE), password (BCrypt), role (ADMIN/USER). Seeded by `DataInitializer`: admin/admin123, user/user123 |
 | `operation_logs` | Audit: package_id, tracking_number, operation_type (CHECK_IN/PICK_UP), operator, details |
 | `shelves` | Shelf names (UNIQUE), seeded with A-01~C-01 |

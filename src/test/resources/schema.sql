@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS packages (
     created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_tracking_number (tracking_number)
+    UNIQUE KEY uk_tracking_number (tracking_number),
+    UNIQUE KEY uk_pickup_code (pickup_code)
 );
 
 CREATE TABLE IF NOT EXISTS users (

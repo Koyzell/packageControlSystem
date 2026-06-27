@@ -16,6 +16,7 @@ public class UserController {
 
     private final PackageService packageService;
 
+    // 根据关键词（运单号，手机号或取件码）查询待取包裹
     @GetMapping("/packages")
     public Result<List<PackageVO>> queryByKeyword(@RequestParam String keyword) {
         if (keyword == null || keyword.isBlank()) {

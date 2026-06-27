@@ -87,6 +87,10 @@
                                         onclick="showAddDialog('courier')">
                                     <i class="bi bi-plus"></i>
                                 </button>
+                                <button type="button" class="btn btn-outline-danger" title="删除快递公司"
+                                        onclick="showDeleteDialog('courier')">
+                                    <i class="bi bi-dash"></i>
+                                </button>
                             </div>
                         </div>
                         <div class="col-12 col-md-3">
@@ -96,6 +100,10 @@
                                 <button type="button" class="btn btn-outline-secondary" title="新增货架"
                                         onclick="showAddDialog('shelf')">
                                     <i class="bi bi-plus"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" title="删除货架"
+                                        onclick="showDeleteDialog('shelf')">
+                                    <i class="bi bi-dash"></i>
                                 </button>
                             </div>
                         </div>
@@ -185,13 +193,39 @@
         </div>
     </div>
 
+    <!-- Delete Dialog Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" id="deleteModalTitle">删除</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <select class="form-select" id="deleteItemSelect"></select>
+                    <div class="invalid-feedback mt-2" id="deleteItemError"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger btn-sm" id="deleteItemConfirm">确认删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const TOKEN = localStorage.getItem('token');
-        const ROLE = localStorage.getItem('role');
+        const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token');
+        const ROLE = sessionStorage.getItem('role') || localStorage.getItem('role');
         if (!TOKEN || ROLE !== 'ADMIN' || isTokenExpired(TOKEN)) {
-            localStorage.clear();
+            localStorage.clear(); sessionStorage.clear();
             window.location.href = 'login.html';
+        }
+        // Sync to sessionStorage on first load
+        if (!sessionStorage.getItem('token') && localStorage.getItem('token')) {
+            sessionStorage.setItem('token', localStorage.getItem('token'));
+            sessionStorage.setItem('role', localStorage.getItem('role'));
+            sessionStorage.setItem('username', localStorage.getItem('username'));
         }
         function isTokenExpired(token) {
             try {
@@ -199,9 +233,9 @@
                 return payload.exp * 1000 < Date.now();
             } catch (e) { return true; }
         }
-        document.getElementById('navUser').textContent = localStorage.getItem('username');
+        document.getElementById('navUser').textContent = sessionStorage.getItem('username') || localStorage.getItem('username');
 
-        function logout() { localStorage.clear(); window.location.href = 'login.html'; }
+        function logout() { localStorage.clear(); sessionStorage.clear(); window.location.href = 'login.html'; }
 
         async function authFetch(url, options) {
             options = options || {};
@@ -265,6 +299,47 @@
             } catch (err) {}
         }
 
+        let deleteModalType = '';
+
+        async function showDeleteDialog(type) {
+            deleteModalType = type;
+            document.getElementById('deleteModalTitle').textContent =
+                type === 'shelf' ? '删除货架' : '删除快递公司';
+            document.getElementById('deleteItemError').style.display = 'none';
+            const sel = document.getElementById('deleteItemSelect');
+            sel.innerHTML = '<option value="">加载中...</option>';
+            new bootstrap.Modal(document.getElementById('deleteModal')).show();
+            // Fetch from API to ensure latest data
+            try {
+                const res = await authFetch('/api/admin/' + (type === 'shelf' ? 'shelves' : 'couriers'));
+                const r = await res.json();
+                if (r.code === 200) {
+                    sel.innerHTML = '<option value="">请选择要删除的' + (type === 'shelf' ? '货架' : '快递公司') + '</option>';
+                    r.data.forEach(item => {
+                        sel.innerHTML += `<option value="${item}">${item}</option>`;
+                    });
+                }
+            } catch (err) { showToast('加载失败', 'error'); }
+        }
+
+        document.getElementById('deleteItemConfirm').addEventListener('click', async function() {
+            const name = document.getElementById('deleteItemSelect').value;
+            const errEl = document.getElementById('deleteItemError');
+            if (!name) { errEl.textContent = '请选择要删除的项'; errEl.style.display = 'block'; return; }
+            try {
+                const res = await authFetch('/api/admin/' + (deleteModalType === 'shelf' ? 'shelves' : 'couriers') + '?name=' + encodeURIComponent(name), { method: 'DELETE' });
+                const r = await res.json();
+                if (r.code === 200) {
+                    bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                    showToast('删除成功', 'success');
+                    await loadDropdowns();
+                } else {
+                    errEl.textContent = r.message;
+                    errEl.style.display = 'block';
+                }
+            } catch (err) { showToast('网络错误: ' + err.message, 'error'); }
+        });
+
         function showAddDialog(type) {
             addModalType = type;
             const title = type === 'shelf' ? '新增货架' : '新增快递公司';
@@ -286,8 +361,8 @@
             try {
                 const res = await authFetch('/api/admin/' + (addModalType === 'shelf' ? 'shelves' : 'couriers'), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(name)
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: name
                 });
                 const r = await res.json();
                 if (r.code === 200) {
@@ -404,7 +479,8 @@
                 const r = await res.json();
                 if (r.code === 200) {
                     showToast('入库成功，取件码: ' + r.data.pickupCode, 'success');
-                    document.getElementById('checkInForm').reset();
+                    document.getElementById('trackingNumber').value = '';
+                    document.getElementById('recipientPhone').value = '';
                     loadDashboard();
                     loadPackages(currentFilter, currentPage);
                 } else showToast(r.message, 'error');

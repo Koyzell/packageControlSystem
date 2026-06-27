@@ -77,6 +77,9 @@
                     localStorage.setItem('token', result.data.token);
                     localStorage.setItem('username', result.data.username);
                     localStorage.setItem('role', result.data.role);
+                    sessionStorage.setItem('token', result.data.token);
+                    sessionStorage.setItem('username', result.data.username);
+                    sessionStorage.setItem('role', result.data.role);
                     if (result.data.role === 'ADMIN') {
                         window.location.href = 'admin.html';
                     } else {

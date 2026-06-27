@@ -92,10 +92,16 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // ===== JWT Guard =====
-        const TOKEN = localStorage.getItem('token');
+        const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token');
         if (!TOKEN || isTokenExpired(TOKEN)) {
-            localStorage.clear();
+            localStorage.clear(); sessionStorage.clear();
             window.location.href = 'login.html';
+        }
+        // Sync to sessionStorage on first load
+        if (!sessionStorage.getItem('token') && localStorage.getItem('token')) {
+            sessionStorage.setItem('token', localStorage.getItem('token'));
+            sessionStorage.setItem('role', localStorage.getItem('role'));
+            sessionStorage.setItem('username', localStorage.getItem('username'));
         }
         function isTokenExpired(token) {
             try {
@@ -103,10 +109,10 @@
                 return payload.exp * 1000 < Date.now();
             } catch (e) { return true; }
         }
-        document.getElementById('navUser').textContent = localStorage.getItem('username');
+        document.getElementById('navUser').textContent = sessionStorage.getItem('username') || localStorage.getItem('username');
 
         function logout() {
-            localStorage.clear();
+            localStorage.clear(); sessionStorage.clear();
             window.location.href = 'login.html';
         }
 
