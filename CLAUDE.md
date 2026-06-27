@@ -74,8 +74,8 @@ mvn spring-boot:run            # Start (requires MySQL with parcel_station datab
 
 `schema.sql` at `src/main/resources/schema.sql` — full DDL + seed data. `test-data.sql` at `src/main/resources/test-data.sql` — 30 sample packages for development.
 
-**Tests (19 cases in `PackageControllerTest`):**
+**Tests (29 cases in `PackageControllerTest`):**
 
-Uses H2 in-memory DB (MySQL mode) via `src/test/resources/application.yaml` + `schema.sql`. Auth disabled via `app.auth.enabled=false`.
+Uses H2 in-memory DB (MySQL mode) via `src/test/resources/application.yaml` + `schema.sql`. Auth disabled via `app.auth.enabled=false`. Tests run in method-name order via `@TestMethodOrder`.
 
-Covers: check-in (with pickup code format validation), keyword search (phone/pickup-code/tracking-number), pickup, overdue detection, duplicate tracking number, invalid phone, missing fields, double pickup, empty query, non-existent pickup, dashboard stats, operation logs, login success/failure, pagination.
+Covers: check-in (with pickup code format validation), keyword search (phone/pickup-code/tracking-number), pickup (user + admin paths), overdue detection, duplicate tracking number, invalid phone, missing fields, double pickup, empty query, non-existent pickup, dashboard stats, operation logs, login success/failure, pagination, shelves CRUD (list/add/delete/duplicate/not-found), couriers CRUD (list/add/delete/duplicate/not-found).

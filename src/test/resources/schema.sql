@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS packages (
     updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_tracking_number (tracking_number),
-    UNIQUE KEY uk_pickup_code (pickup_code)
+    UNIQUE KEY uk_pickup_code (pickup_code),
+    INDEX idx_recipient_phone (recipient_phone),
+    INDEX idx_status (status),
+    INDEX idx_check_in_time (check_in_time)
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -34,7 +37,8 @@ CREATE TABLE IF NOT EXISTS operation_logs (
     operator        VARCHAR(32)  DEFAULT NULL,
     details         VARCHAR(256) DEFAULT NULL,
     created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    INDEX idx_created_at (created_at)
 );
 
 CREATE TABLE IF NOT EXISTS shelves (
